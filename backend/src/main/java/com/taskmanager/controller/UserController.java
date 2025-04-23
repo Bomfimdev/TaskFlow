@@ -34,4 +34,19 @@ public class UserController {
         return user.map(ResponseEntity::ok)
                    .orElseGet(() -> ResponseEntity.notFound().build());
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<User> updateUser(@PathVariable Long id, @RequestBody User updatedUser) {
+        Optional<User> existingUser = userRepository.findById(id);
+        if (existingUser.isPresent()) {
+            User user = existingUser.get();
+            user.setUsername(updatedUser.getUsername());
+            user.setEmail(updatedUser.getEmail());
+            user.setPassword(updatedUser.getPassword());
+            User savedUser = userRepository.save(user);
+            return ResponseEntity.ok(savedUser);
+        } else {
+            return ResponseEntity.notFound().build();
+        }
+    }
 }
