@@ -1,6 +1,6 @@
-# 🗂️ TaskFlow — Sistema de Gerenciamento de Tarefas e Projetos
+# 🗂️ TicTaref — Sistema de Gerenciamento de Tarefas e Projetos
 
-**TaskFlow** é uma aplicação web fullstack que permite criar, gerenciar e colaborar em tarefas e projetos de forma simples e eficiente. Organize suas atividades com quadros no estilo **Kanban**, colabore com outros usuários e acompanhe o progresso com alertas visuais intuitivos.
+**TicTaref** é uma aplicação web fullstack que permite criar, gerenciar e colaborar em tarefas e projetos de forma simples e eficiente. Organize suas atividades com quadros no estilo **Kanban**, colabore com outros usuários e acompanhe o progresso com alertas visuais intuitivos.
 
 ---
 
