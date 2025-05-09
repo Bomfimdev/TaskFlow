@@ -25,7 +25,7 @@ public class Tag {
     private String name;
 
     @ManyToMany(mappedBy = "tags")
-    @JsonBackReference
+    @JsonBackReference(value = "task-tags")
     private List<Task> tasks = new ArrayList<>();
 
     // Getters e Setters

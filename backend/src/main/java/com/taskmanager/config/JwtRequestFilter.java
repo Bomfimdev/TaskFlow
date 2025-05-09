@@ -16,6 +16,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.taskmanager.service.JwtUtilService;
 
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.SignatureException;
+import io.jsonwebtoken.UnsupportedJwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -54,6 +58,16 @@ public class JwtRequestFilter extends OncePerRequestFilter {
             try {
                 username = jwtUtilService.extractUsername(jwt);
                 logger.debug("Usuário extraído do token: {}", username);
+            } catch (IllegalArgumentException e) {
+                logger.error("Não foi possível extrair o usuário do token JWT: {}", e.getMessage());
+            } catch (ExpiredJwtException e) {
+                logger.error("Token JWT expirado: {}", e.getMessage());
+            } catch (SignatureException e) {
+                logger.error("Assinatura do token JWT inválida: {}", e.getMessage());
+            } catch (MalformedJwtException e) {
+                logger.error("Token JWT malformado: {}", e.getMessage());
+            } catch (UnsupportedJwtException e) {
+                logger.error("Token JWT não suportado: {}", e.getMessage());
             } catch (Exception e) {
                 logger.error("Erro ao extrair usuário do token JWT: {}", e.getMessage(), e);
             }

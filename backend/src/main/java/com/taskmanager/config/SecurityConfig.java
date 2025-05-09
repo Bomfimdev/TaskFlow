@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -45,12 +46,13 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     logger.debug("Definindo regras de autorização...");
                     auth
+                            .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                             .requestMatchers("/api/auth/**").permitAll()
                             .requestMatchers("/api/users").permitAll()
-                            .requestMatchers("/api/tasks/**").authenticated()
-                            .requestMatchers("/api/tags/**").authenticated()
+                            .requestMatchers("/api/tasks/**").hasAuthority("ROLE_USER")
+                            .requestMatchers("/api/tags/**").hasAuthority("ROLE_USER")
                             .anyRequest().denyAll();
-                    logger.debug("Regras de autorização definidas: /api/auth/** (permitAll), /api/users (permitAll), /api/tasks/** (authenticated), /api/tags/** (authenticated), anyRequest (denyAll)");
+                    logger.debug("Regras de autorização definidas: /api/auth/** (permitAll), /api/users (permitAll), /api/tasks/** (hasAuthority ROLE_USER), /api/tags/** (hasAuthority ROLE_USER), anyRequest (denyAll)");
                 })
                 .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
 

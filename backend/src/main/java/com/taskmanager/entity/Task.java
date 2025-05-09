@@ -50,7 +50,7 @@ public class Task {
         joinColumns = @JoinColumn(name = "task_id"),
         inverseJoinColumns = @JoinColumn(name = "tag_id")
     )
-    @JsonManagedReference
+    @JsonManagedReference(value = "task-tags")
     private List<Tag> tags = new ArrayList<>();
 
     // Getters e Setters

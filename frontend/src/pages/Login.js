@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [token, setToken] = useState('');
+  const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -14,13 +15,11 @@ const Login = () => {
         username,
         password,
       });
-      setToken(response.data.token);
-      setError('');
       localStorage.setItem('token', response.data.token);
-      alert('Login bem-sucedido!');
+      setError('');
+      navigate('/dashboard');
     } catch (err) {
       setError('Erro ao fazer login. Verifique suas credenciais.');
-      setToken('');
     }
   };
 
@@ -58,7 +57,6 @@ const Login = () => {
             />
           </div>
           {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-          {token && <p className="text-green-500 text-sm mb-4">Token: {token}</p>}
           <button
             type="submit"
             className="w-full bg-blue-500 text-white p-2 rounded-md hover:bg-blue-600 transition duration-300"

@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.taskmanager.dto.TaskDTO;
 import com.taskmanager.entity.Tag;
 import com.taskmanager.entity.Task;
 import com.taskmanager.entity.User;
@@ -44,26 +45,27 @@ public class TaskController {
     private TagRepository tagRepository;
 
     @PostMapping
-    public ResponseEntity<Task> createTask(@RequestBody Task task) {
+    public ResponseEntity<Task> createTask(@RequestBody TaskDTO taskDTO) {
+        logger.info("Recebendo requisição para criar tarefa: {}", taskDTO);
         try {
-            logger.info("Tentando criar tarefa: {}", task.getTitle());
+            logger.info("Tentando criar tarefa: {}", taskDTO.getTitle());
 
             // Validar os campos title e status
-            if (task.getTitle() == null || task.getTitle().trim().isEmpty()) {
+            if (taskDTO.getTitle() == null || taskDTO.getTitle().trim().isEmpty()) {
                 logger.error("O título da tarefa não pode ser nulo ou vazio.");
                 return ResponseEntity.status(400).build();
             }
-            if (task.getStatus() == null || task.getStatus().trim().isEmpty()) {
+            if (taskDTO.getStatus() == null || taskDTO.getStatus().trim().isEmpty()) {
                 logger.error("O status da tarefa não pode ser nulo ou vazio.");
                 return ResponseEntity.status(400).build();
             }
             // Validar status válidos
-            if (!task.getStatus().equals("Pendente") && !task.getStatus().equals("Em Andamento") && !task.getStatus().equals("Concluída")) {
+            if (!taskDTO.getStatus().equals("Pendente") && !taskDTO.getStatus().equals("Em Andamento") && !taskDTO.getStatus().equals("Concluída")) {
                 logger.error("O status deve ser 'Pendente', 'Em Andamento' ou 'Concluída'.");
                 return ResponseEntity.status(400).build();
             }
             // Validar dueDate (se fornecido, deve ser uma data futura)
-            if (task.getDueDate() != null && task.getDueDate().isBefore(LocalDateTime.now())) {
+            if (taskDTO.getDueDate() != null && taskDTO.getDueDate().isBefore(LocalDateTime.now())) {
                 logger.error("A data de vencimento (dueDate) deve ser uma data futura.");
                 return ResponseEntity.status(400).build();
             }
@@ -82,9 +84,15 @@ public class TaskController {
                     .orElseThrow(() -> new RuntimeException("Usuário não encontrado: " + username));
             logger.debug("Usuário encontrado: {}", user.getUsername());
 
+            // Mapear o DTO para a entidade Task
+            Task task = new Task();
+            task.setTitle(taskDTO.getTitle());
+            task.setDescription(taskDTO.getDescription());
+            task.setStatus(taskDTO.getStatus());
+            task.setDueDate(taskDTO.getDueDate());
             task.setUser(user);
             task.setCreatedAt(LocalDateTime.now());
-            task.setArchived(false); // Garantir que a tarefa não esteja arquivada ao ser criada
+            task.setArchived(taskDTO.isArchived());
 
             Task savedTask = taskRepository.save(task);
             logger.info("Tarefa criada com sucesso: {}", savedTask.getId());
