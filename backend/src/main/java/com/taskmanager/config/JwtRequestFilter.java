@@ -5,6 +5,7 @@ import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -15,9 +16,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.taskmanager.service.JwtUtilService;
 
-import io.jsonwebtoken.ExpiredJwtException;
-import io.jsonwebtoken.MalformedJwtException;
-import io.jsonwebtoken.security.SignatureException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,74 +26,75 @@ public class JwtRequestFilter extends OncePerRequestFilter {
 
     private static final Logger logger = LoggerFactory.getLogger(JwtRequestFilter.class);
 
-    @Autowired
-    private UserDetailsService userDetailsService;
+    private final ApplicationContext applicationContext;
 
     @Autowired
     private JwtUtilService jwtUtilService;
 
+    public JwtRequestFilter(ApplicationContext applicationContext) {
+        this.applicationContext = applicationContext;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        final String requestTokenHeader = request.getHeader("Authorization");
-        logger.debug("Processando requisição: {} {}", request.getMethod(), request.getRequestURI());
-        logger.debug("Cabeçalho Authorization: {}", requestTokenHeader);
+        final String requestURI = request.getRequestURI();
+        final String method = request.getMethod();
+        logger.info("Processando requisição: {} {}", method, requestURI);
+
+        final String authorizationHeader = request.getHeader("Authorization");
+        logger.debug("Cabeçalho Authorization: {}", authorizationHeader);
 
         String username = null;
-        String jwtToken = null;
+        String jwt = null;
 
-        if (requestTokenHeader != null && requestTokenHeader.startsWith("Bearer ")) {
-            jwtToken = requestTokenHeader.substring(7);
-            logger.debug("Token JWT extraído: {}", jwtToken);
+        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+            jwt = authorizationHeader.substring(7);
+            logger.debug("Token JWT extraído: {}", jwt);
             try {
-                username = jwtUtilService.extractUsername(jwtToken);
-                logger.debug("Username extraído do token: {}", username);
-            } catch (ExpiredJwtException e) {
-                logger.warn("Token JWT expirado: {}", e.getMessage());
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token expirado");
-                return;
-            } catch (SignatureException | MalformedJwtException e) {
-                logger.warn("Token JWT inválido: {}", e.getMessage());
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token inválido");
-                return;
+                username = jwtUtilService.extractUsername(jwt);
+                logger.debug("Usuário extraído do token: {}", username);
             } catch (Exception e) {
-                logger.error("Erro ao extrair username do token: {}", e.getMessage(), e);
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Erro ao processar token");
-                return;
+                logger.error("Erro ao extrair usuário do token JWT: {}", e.getMessage(), e);
             }
         } else {
-            logger.debug("Nenhum token JWT encontrado ou formato inválido no cabeçalho Authorization.");
+            logger.debug("Cabeçalho Authorization não contém 'Bearer ' ou está ausente.");
         }
 
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            logger.debug("Carregando detalhes do usuário: {}", username);
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
-            if (userDetails == null) {
-                logger.error("Usuário não encontrado no banco de dados: {}", username);
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Usuário não encontrado");
-                return;
-            }
-            logger.debug("Detalhes do usuário carregados: {}", userDetails.getUsername());
+            logger.debug("Carregando UserDetails para o usuário: {}", username);
+            UserDetailsService userDetailsService = applicationContext.getBean(UserDetailsService.class);
+            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+            logger.debug("UserDetails carregado: {}", userDetails.getUsername());
+            logger.debug("Autoridades do usuário: {}", userDetails.getAuthorities());
 
-            logger.debug("Validando token JWT...");
-            if (jwtUtilService.validateToken(jwtToken, userDetails)) {
-                UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
-                authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
-                logger.debug("Autenticação configurada para o usuário: {}", username);
-            } else {
-                logger.warn("Token JWT inválido para o usuário: {}", username);
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token inválido");
-                return;
+            try {
+                boolean isTokenValid = jwtUtilService.validateToken(jwt, username);
+                logger.debug("Resultado da validação do token: {}", isTokenValid);
+                if (isTokenValid) {
+                    logger.debug("Token JWT validado com sucesso para o usuário: {}", username);
+                    UsernamePasswordAuthenticationToken authenticationToken =
+                            new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                    authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                    logger.info("Contexto de segurança preenchido para o usuário: {}", username);
+                    logger.debug("Autenticação no SecurityContextHolder após preenchimento: {}", SecurityContextHolder.getContext().getAuthentication());
+                    if (SecurityContextHolder.getContext().getAuthentication() == null) {
+                        logger.error("Falha ao preencher o SecurityContextHolder para o usuário: {}", username);
+                    }
+                } else {
+                    logger.warn("Token JWT inválido para o usuário: {}", username);
+                }
+            } catch (Exception e) {
+                logger.error("Erro ao validar o token JWT: {}", e.getMessage(), e);
             }
-        } else if (username == null && requestTokenHeader != null) {
-            logger.warn("Nenhum username extraído do token para a requisição: {} {}", request.getMethod(), request.getRequestURI());
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token inválido ou ausente");
-            return;
+        } else if (username == null && authorizationHeader != null) {
+            logger.warn("Não foi possível extrair o usuário do token JWT para a requisição: {} {}", method, requestURI);
+        } else {
+            logger.debug("Nenhum usuário autenticado ou token ausente para a requisição: {} {}", method, requestURI);
         }
 
-        logger.debug("Prosseguindo com a requisição...");
+        logger.debug("Estado final do SecurityContextHolder antes de prosseguir: {}", SecurityContextHolder.getContext().getAuthentication());
         chain.doFilter(request, response);
     }
 }

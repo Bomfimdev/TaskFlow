@@ -1,11 +1,7 @@
 package com.taskmanager.controller;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -15,10 +11,12 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.taskmanager.dto.LoginRequest;
+import com.taskmanager.dto.AuthRequestDTO;
+import com.taskmanager.dto.AuthResponseDTO;
 import com.taskmanager.service.JwtUtilService;
 
 @RestController
@@ -27,44 +25,54 @@ public class AuthController {
 
     private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
 
-    @Autowired
-    private AuthenticationManager authenticationManager;
+    private final AuthenticationManager authenticationManager;
+    private final UserDetailsService userDetailsService;
+    private final JwtUtilService jwtUtilService;
 
-    @Autowired
-    private UserDetailsService userDetailsService;
-
-    @Autowired
-    private JwtUtilService jwtUtilService;
+    public AuthController(AuthenticationManager authenticationManager,
+                          UserDetailsService userDetailsService,
+                          JwtUtilService jwtUtilService) {
+        this.authenticationManager = authenticationManager;
+        this.userDetailsService = userDetailsService;
+        this.jwtUtilService = jwtUtilService;
+    }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
+    public ResponseEntity<?> createAuthenticationToken(@RequestBody AuthRequestDTO authRequest) {
+        logger.info("Recebendo solicitação de login para o usuário: {}", authRequest.getUsername());
         try {
-            logger.info("Tentando autenticar usuário: {}", loginRequest.getUsername());
-            logger.debug("Credenciais recebidas: username={}, password={}", loginRequest.getUsername(), loginRequest.getPassword());
-
             Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword())
+                    new UsernamePasswordAuthenticationToken(authRequest.getUsername(), authRequest.getPassword())
             );
+            logger.debug("Autenticação bem-sucedida para o usuário: {}", authRequest.getUsername());
 
-            logger.debug("Autenticação bem-sucedida: {}", authentication.getName());
+            final UserDetails userDetails = userDetailsService.loadUserByUsername(authRequest.getUsername());
+            final String jwt = jwtUtilService.generateToken(userDetails.getUsername());
 
-            UserDetails userDetails = userDetailsService.loadUserByUsername(loginRequest.getUsername());
-            logger.debug("UserDetails carregado: username={}, authorities={}", userDetails.getUsername(), userDetails.getAuthorities());
-
-            String jwt = jwtUtilService.generateToken(userDetails);
-            logger.debug("Token JWT gerado: {}", jwt);
-
-            Map<String, String> response = new HashMap<>();
-            response.put("token", jwt);
-
-            logger.info("Usuário autenticado com sucesso: {}", loginRequest.getUsername());
-            return ResponseEntity.ok(response);
+            logger.info("Token JWT gerado com sucesso para o usuário: {}", authRequest.getUsername());
+            return ResponseEntity.ok(new AuthResponseDTO(jwt));
         } catch (AuthenticationException e) {
-            logger.error("Falha na autenticação para o usuário {}: {}", loginRequest.getUsername(), e.getMessage());
-            return ResponseEntity.status(401).body("Credenciais inválidas");
+            logger.error("Falha na autenticação para o usuário {}: {}", authRequest.getUsername(), e.getMessage());
+            return ResponseEntity.status(401).body("Usuário ou senha incorretos");
+        }
+    }
+
+    @PostMapping("/validate")
+    public ResponseEntity<?> validateToken(@RequestHeader("Authorization") String token) {
+        logger.info("Validando token JWT: {}", token);
+        try {
+            String jwt = token.startsWith("Bearer ") ? token.substring(7) : token;
+            UserDetails userDetails = userDetailsService.loadUserByUsername(jwtUtilService.extractUsername(jwt));
+            if (jwtUtilService.validateToken(jwt, userDetails.getUsername())) {
+                logger.info("Token válido para o usuário: {}", userDetails.getUsername());
+                return ResponseEntity.ok("Token válido");
+            } else {
+                logger.warn("Token inválido ou expirado para o usuário: {}", userDetails.getUsername());
+                return ResponseEntity.status(401).body("Token inválido ou expirado");
+            }
         } catch (Exception e) {
-            logger.error("Erro inesperado ao processar login para o usuário {}: {}", loginRequest.getUsername(), e.getMessage(), e);
-            return ResponseEntity.status(500).body("Erro interno no servidor");
+            logger.error("Erro ao validar o token: {}", e.getMessage());
+            return ResponseEntity.status(401).body("Erro ao validar o token");
         }
     }
 }

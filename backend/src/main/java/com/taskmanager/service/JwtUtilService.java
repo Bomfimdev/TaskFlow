@@ -1,78 +1,57 @@
 package com.taskmanager.service;
 
-import java.nio.charset.StandardCharsets;
+import java.security.Key;
 import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.function.Function;
-
-import javax.crypto.SecretKey;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.JwtBuilder;
-import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 
 @Service
 public class JwtUtilService {
 
-    @Value("${jwt.secret}")
-    private String secret;
+    private final Key jwtSecretKey;
+    private final long expirationTime;
 
-    @Value("${jwt.expiration}")
-    private Long expiration;
-
-    private SecretKey getSigningKey() {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        return Keys.hmacShaKeyFor(keyBytes);
+    public JwtUtilService(@Value("${jwt.secret}") String jwtSecret, @Value("${jwt.expiration}") long expirationTime) {
+        this.jwtSecretKey = Keys.hmacShaKeyFor(jwtSecret.getBytes());
+        this.expirationTime = expirationTime;
     }
 
-    public String generateToken(UserDetails userDetails) {
-        Map<String, Object> claims = new HashMap<>();
-        return createToken(claims, userDetails.getUsername());
-    }
-
-    private String createToken(Map<String, Object> claims, String subject) {
-        JwtBuilder builder = Jwts.builder()
-                .claims(claims)
-                .subject(subject)
-                .issuedAt(new Date(System.currentTimeMillis()))
-                .expiration(new Date(System.currentTimeMillis() + expiration * 1000))
-                .signWith(getSigningKey());
-        return builder.compact();
+    public String generateToken(String username) {
+        return Jwts.builder()
+                .setSubject(username)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + expirationTime))
+                .signWith(jwtSecretKey, SignatureAlgorithm.HS512)
+                .compact();
     }
 
     public String extractUsername(String token) {
-        return extractClaim(token, Claims::getSubject);
+        return Jwts.parser()
+                .setSigningKey(jwtSecretKey)
+                .parseClaimsJws(token)
+                .getBody()
+                .getSubject();
     }
 
-    public Date extractExpiration(String token) {
-        return extractClaim(token, Claims::getExpiration);
-    }
-
-    public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = extractAllClaims(token);
-        return claimsResolver.apply(claims);
-    }
-
-    private Claims extractAllClaims(String token) {
-        JwtParser parser = Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build();
-        return parser.parseSignedClaims(token).getPayload();
-    }
-
-    public Boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
-    }
-
-    public Boolean validateToken(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+    public boolean validateToken(String token, String username) {
+        try {
+            Claims claims = Jwts.parser()
+                    .setSigningKey(jwtSecretKey)
+                    .parseClaimsJws(token)
+                    .getBody();
+            String extractedUsername = claims.getSubject();
+            Date expiration = claims.getExpiration();
+            boolean isNotExpired = !expiration.before(new Date());
+            boolean usernameMatches = extractedUsername.equals(username);
+            return usernameMatches && isNotExpired;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

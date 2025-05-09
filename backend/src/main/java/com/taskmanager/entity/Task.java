@@ -1,16 +1,19 @@
 package com.taskmanager.entity;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
@@ -22,20 +25,33 @@ public class Task {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String title;
+
     private String description;
+
     private String status;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "archived", nullable = false)
-    private boolean archived = false; // Novo campo, false por padrão
+    @Column(name = "due_date")
+    private LocalDateTime dueDate;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    private boolean archived;
+
+    @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
-    @JsonBackReference
     private User user;
+
+    @ManyToMany
+    @JoinTable(
+        name = "task_tags",
+        joinColumns = @JoinColumn(name = "task_id"),
+        inverseJoinColumns = @JoinColumn(name = "tag_id")
+    )
+    @JsonManagedReference
+    private List<Tag> tags = new ArrayList<>();
 
     // Getters e Setters
     public Long getId() {
@@ -78,6 +94,14 @@ public class Task {
         this.createdAt = createdAt;
     }
 
+    public LocalDateTime getDueDate() {
+        return dueDate;
+    }
+
+    public void setDueDate(LocalDateTime dueDate) {
+        this.dueDate = dueDate;
+    }
+
     public boolean isArchived() {
         return archived;
     }
@@ -92,5 +116,13 @@ public class Task {
 
     public void setUser(User user) {
         this.user = user;
+    }
+
+    public List<Tag> getTags() {
+        return tags;
+    }
+
+    public void setTags(List<Tag> tags) {
+        this.tags = tags;
     }
 }

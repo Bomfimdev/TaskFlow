@@ -2,14 +2,11 @@ package com.taskmanager.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.AuthenticationProvider;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -25,68 +22,57 @@ public class SecurityConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
 
-    @Autowired
-    private UserDetailsService userDetailsService;
+    private final JwtRequestFilter jwtRequestFilter;
+    private final ApplicationContext applicationContext;
 
-    @Autowired
-    private JwtRequestFilter jwtRequestFilter;
-
-    @Bean
-    public PublicEndpointFilter publicEndpointFilter() {
-        return new PublicEndpointFilter(jwtRequestFilter);
+    public SecurityConfig(JwtRequestFilter jwtRequestFilter, ApplicationContext applicationContext) {
+        this.jwtRequestFilter = jwtRequestFilter;
+        this.applicationContext = applicationContext;
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        logger.info("Iniciando configuração do Spring Security...");
-
+        logger.info("Configurando regras de segurança para HttpSecurity...");
         http
-            .csrf(csrf -> {
-                logger.debug("Desativando CSRF...");
-                csrf.disable();
-            })
-            .sessionManagement(session -> {
-                logger.debug("Configurando sessão como stateless...");
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS);
-            })
-            .authorizeHttpRequests(auth -> {
-                logger.debug("Configurando regras de autorização...");
-                auth
-                    .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll()
-                    .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
-                    .anyRequest().authenticated();
-            })
-            .addFilterBefore(publicEndpointFilter(), UsernamePasswordAuthenticationFilter.class);
+                .csrf(csrf -> {
+                    logger.debug("Desativando CSRF...");
+                    csrf.disable();
+                })
+                .sessionManagement(session -> {
+                    logger.debug("Configurando sessão como STATELESS...");
+                    session.sessionCreationPolicy(SessionCreationPolicy.STATELESS);
+                })
+                .authorizeHttpRequests(auth -> {
+                    logger.debug("Definindo regras de autorização...");
+                    auth
+                            .requestMatchers("/api/auth/**").permitAll()
+                            .requestMatchers("/api/users").permitAll()
+                            .requestMatchers("/api/tasks/**").authenticated()
+                            .requestMatchers("/api/tags/**").authenticated()
+                            .anyRequest().denyAll();
+                    logger.debug("Regras de autorização definidas: /api/auth/** (permitAll), /api/users (permitAll), /api/tasks/** (authenticated), /api/tags/** (authenticated), anyRequest (denyAll)");
+                })
+                .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
 
-        logger.info("CSRF desativado.");
-        logger.info("Sessão configurada como stateless.");
-        logger.info("Regras de autorização configuradas: /api/auth/** (POST) e /api/users (POST) liberados, outros endpoints exigem autenticação.");
-        logger.info("Filtro personalizado (PublicEndpointFilter) configurado com exclusão de endpoints públicos.");
-        logger.info("Configuração do Spring Security concluída.");
+        logger.info("SecurityFilterChain configurado com sucesso.");
         return http.build();
     }
 
     @Bean
-    public AuthenticationProvider authenticationProvider() {
-        logger.info("Configurando AuthenticationProvider...");
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder());
-        logger.debug("AuthenticationProvider configurado com UserDetailsService e PasswordEncoder.");
-        return authProvider;
-    }
-
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
+    public AuthenticationManager authenticationManager(HttpSecurity http) throws Exception {
         logger.info("Configurando AuthenticationManager...");
-        AuthenticationManager manager = authenticationConfiguration.getAuthenticationManager();
-        logger.debug("AuthenticationManager configurado com sucesso.");
-        return manager;
+        UserDetailsService userDetailsService = applicationContext.getBean(UserDetailsService.class);
+        AuthenticationManagerBuilder authenticationManagerBuilder =
+                http.getSharedObject(AuthenticationManagerBuilder.class);
+        authenticationManagerBuilder.userDetailsService(userDetailsService)
+                .passwordEncoder(passwordEncoder());
+        logger.info("AuthenticationManager configurado com sucesso.");
+        return authenticationManagerBuilder.build();
     }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        logger.info("Configurando BCryptPasswordEncoder...");
+        logger.info("Configurando PasswordEncoder como BCryptPasswordEncoder...");
         return new BCryptPasswordEncoder();
     }
 }
