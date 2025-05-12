@@ -1,8 +1,13 @@
 package com.taskmanager.controller;
 
-import java.time.LocalDateTime;
-import java.util.List;
-
+import com.taskmanager.dto.TaskDTO;
+import com.taskmanager.entity.Tag;
+import com.taskmanager.entity.Task;
+import com.taskmanager.entity.User;
+import com.taskmanager.repository.TagRepository;
+import com.taskmanager.repository.TaskRepository;
+import com.taskmanager.repository.UserRepository;
+import com.taskmanager.service.TaskService;
 import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,29 +16,19 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-import com.taskmanager.dto.TaskDTO;
-import com.taskmanager.entity.Tag;
-import com.taskmanager.entity.Task;
-import com.taskmanager.entity.User;
-import com.taskmanager.repository.TagRepository;
-import com.taskmanager.repository.TaskRepository;
-import com.taskmanager.repository.UserRepository;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/tasks")
 public class TaskController {
 
     private static final Logger logger = LoggerFactory.getLogger(TaskController.class);
+
+    @Autowired
+    private TaskService taskService;
 
     @Autowired
     private TaskRepository taskRepository;
@@ -44,102 +39,39 @@ public class TaskController {
     @Autowired
     private TagRepository tagRepository;
 
+    @GetMapping
+    public ResponseEntity<List<Task>> getAllTasks(
+            @RequestParam(defaultValue = "false") boolean includeArchived,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortOrder) {
+        logger.info("Obtendo todas as tarefas... Include archived: {}, Sort by: {}, Order: {}", includeArchived, sortBy, sortOrder);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+        List<Task> tasks = taskService.getAllTasks(username, includeArchived, sortBy, sortOrder);
+        logger.info("Tarefas encontradas: {}", tasks.size());
+        return ResponseEntity.ok(tasks);
+    }
+
     @PostMapping
     public ResponseEntity<Task> createTask(@RequestBody TaskDTO taskDTO) {
         logger.info("Recebendo requisição para criar tarefa: {}", taskDTO);
-        try {
-            logger.info("Tentando criar tarefa: {}", taskDTO.getTitle());
-
-            // Validar os campos title e status
-            if (taskDTO.getTitle() == null || taskDTO.getTitle().trim().isEmpty()) {
-                logger.error("O título da tarefa não pode ser nulo ou vazio.");
-                return ResponseEntity.status(400).build();
-            }
-            if (taskDTO.getStatus() == null || taskDTO.getStatus().trim().isEmpty()) {
-                logger.error("O status da tarefa não pode ser nulo ou vazio.");
-                return ResponseEntity.status(400).build();
-            }
-            // Validar status válidos
-            if (!taskDTO.getStatus().equals("Pendente") && !taskDTO.getStatus().equals("Em Andamento") && !taskDTO.getStatus().equals("Concluída")) {
-                logger.error("O status deve ser 'Pendente', 'Em Andamento' ou 'Concluída'.");
-                return ResponseEntity.status(400).build();
-            }
-            // Validar dueDate (se fornecido, deve ser uma data futura)
-            if (taskDTO.getDueDate() != null && taskDTO.getDueDate().isBefore(LocalDateTime.now())) {
-                logger.error("A data de vencimento (dueDate) deve ser uma data futura.");
-                return ResponseEntity.status(400).build();
-            }
-
-            // Obter o usuário autenticado do SecurityContextHolder
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null || !authentication.isAuthenticated()) {
-                logger.error("Nenhum usuário autenticado encontrado para criar a tarefa.");
-                return ResponseEntity.status(401).build();
-            }
-
-            String username = authentication.getName();
-            logger.debug("Usuário autenticado: {}", username);
-
-            User user = userRepository.findByUsername(username)
-                    .orElseThrow(() -> new RuntimeException("Usuário não encontrado: " + username));
-            logger.debug("Usuário encontrado: {}", user.getUsername());
-
-            // Mapear o DTO para a entidade Task
-            Task task = new Task();
-            task.setTitle(taskDTO.getTitle());
-            task.setDescription(taskDTO.getDescription());
-            task.setStatus(taskDTO.getStatus());
-            task.setDueDate(taskDTO.getDueDate());
-            task.setUser(user);
-            task.setCreatedAt(LocalDateTime.now());
-            task.setArchived(taskDTO.isArchived());
-
-            Task savedTask = taskRepository.save(task);
-            logger.info("Tarefa criada com sucesso: {}", savedTask.getId());
-            return ResponseEntity.ok(savedTask);
-        } catch (Exception e) {
-            logger.error("Erro ao criar tarefa: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).build();
-        }
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+        logger.info("Tentando criar tarefa: {}", taskDTO.getTitle());
+        Task createdTask = taskService.createTask(taskDTO, username);
+        logger.info("Tarefa criada com sucesso: {}", createdTask.getId());
+        return ResponseEntity.ok(createdTask);
     }
 
-    @GetMapping
-    public ResponseEntity<List<Task>> getTasks(
-            @RequestParam(required = false, defaultValue = "false") boolean includeArchived,
-            @RequestParam(required = false, defaultValue = "createdAt") String sortBy,
-            @RequestParam(required = false, defaultValue = "desc") String order) {
-        try {
-            logger.info("Obtendo todas as tarefas... Include archived: {}, Sort by: {}, Order: {}", includeArchived, sortBy, order);
-
-            // Obter o usuário autenticado do SecurityContextHolder
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null || !authentication.isAuthenticated()) {
-                logger.error("Nenhum usuário autenticado encontrado para obter as tarefas.");
-                return ResponseEntity.status(401).build();
-            }
-
-            String username = authentication.getName();
-            logger.debug("Usuário autenticado: {}", username);
-
-            User user = userRepository.findByUsername(username)
-                    .orElseThrow(() -> new RuntimeException("Usuário não encontrado: " + username));
-            logger.debug("Usuário encontrado: ID = {}, Username = {}", user.getId(), user.getUsername());
-
-            // Forçar a sincronização com o banco de dados
-            logger.debug("Forçando sincronização com o banco de dados antes de buscar as tarefas.");
-            taskRepository.flush();
-
-            // Definir a ordenação
-            Sort sort = Sort.by(order.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC, sortBy);
-
-            // Buscar tarefas com base no parâmetro includeArchived e ordenação
-            List<Task> tasks = taskRepository.findByUserAndArchived(user, includeArchived, sort);
-            logger.info("Tarefas encontradas: {}", tasks.size());
-            return ResponseEntity.ok(tasks);
-        } catch (Exception e) {
-            logger.error("Erro ao obter tarefas: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).build();
-        }
+    @PutMapping("/{id}")
+    public ResponseEntity<Task> updateTask(@PathVariable Long id, @RequestBody TaskDTO taskDTO) {
+        logger.info("Recebendo requisição para atualizar tarefa com ID: {}", id);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+        logger.info("Tentando atualizar tarefa: {}", taskDTO.getTitle());
+        Task updatedTask = taskService.updateTask(id, taskDTO, username);
+        logger.info("Tarefa atualizada com sucesso: {}", updatedTask.getId());
+        return ResponseEntity.ok(updatedTask);
     }
 
     @GetMapping("/filter")
@@ -523,155 +455,15 @@ public class TaskController {
         }
     }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<Task> updateTask(@PathVariable Long id, @RequestBody Task taskDetails) {
-        try {
-            logger.info("Tentando atualizar tarefa com ID: {}", id);
-
-            // Validar os campos title e status
-            if (taskDetails.getTitle() == null || taskDetails.getTitle().trim().isEmpty()) {
-                logger.error("O título da tarefa não pode ser nulo ou vazio.");
-                return ResponseEntity.status(400).build();
-            }
-            if (taskDetails.getStatus() == null || taskDetails.getStatus().trim().isEmpty()) {
-                logger.error("O status da tarefa não pode ser nulo ou vazio.");
-                return ResponseEntity.status(400).build();
-            }
-            // Validar status válidos
-            if (!taskDetails.getStatus().equals("Pendente") && !taskDetails.getStatus().equals("Em Andamento") && !taskDetails.getStatus().equals("Concluída")) {
-                logger.error("O status deve ser 'Pendente', 'Em Andamento' ou 'Concluída'.");
-                return ResponseEntity.status(400).build();
-            }
-            // Validar dueDate (se fornecido, deve ser uma data futura)
-            if (taskDetails.getDueDate() != null && taskDetails.getDueDate().isBefore(LocalDateTime.now())) {
-                logger.error("A data de vencimento (dueDate) deve ser uma data futura.");
-                return ResponseEntity.status(400).build();
-            }
-
-            // Obter o usuário autenticado do SecurityContextHolder
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null || !authentication.isAuthenticated()) {
-                logger.error("Nenhum usuário autenticado encontrado para atualizar a tarefa.");
-                return ResponseEntity.status(401).build();
-            }
-
-            String username = authentication.getName();
-            logger.debug("Usuário autenticado: {}", username);
-
-            User user = userRepository.findByUsername(username)
-                    .orElseThrow(() -> new RuntimeException("Usuário não encontrado: " + username));
-            logger.debug("Usuário encontrado: ID = {}, Username = {}", user.getId(), user.getUsername());
-
-            Task task = taskRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Tarefa não encontrada: " + id));
-            logger.debug("Tarefa encontrada: ID = {}, Title = {}", task.getId(), task.getTitle());
-
-            // Forçar o carregamento do usuário associado à tarefa
-            Hibernate.initialize(task.getUser());
-            User taskUser = task.getUser();
-            if (taskUser == null) {
-                logger.error("Tarefa com ID {} não possui um usuário associado.", id);
-                return ResponseEntity.status(400).build();
-            }
-
-            logger.debug("Verificando propriedade da tarefa: user_id da tarefa = {}, id do usuário autenticado = {}", 
-                        taskUser.getId(), user.getId());
-            if (!taskUser.getId().equals(user.getId())) {
-                logger.error("Usuário {} (ID: {}) não tem permissão para atualizar a tarefa {} (user_id: {})", username, user.getId(), id, taskUser.getId());
-                return ResponseEntity.status(403).build();
-            }
-
-            // Atualizar os campos da tarefa
-            task.setTitle(taskDetails.getTitle());
-            task.setDescription(taskDetails.getDescription());
-            task.setStatus(taskDetails.getStatus());
-            task.setDueDate(taskDetails.getDueDate());
-
-            Task updatedTask = taskRepository.save(task);
-            taskRepository.flush();
-            logger.info("Tarefa atualizada com sucesso: {}", updatedTask.getId());
-            return ResponseEntity.ok(updatedTask);
-        } catch (Exception e) {
-            logger.error("Erro ao atualizar tarefa: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).build();
-        }
-    }
-
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteTask(@PathVariable Long id) {
-        try {
-            logger.info("Iniciando processo de deleção para tarefa com ID: {}", id);
+        logger.info("Recebendo requisição para excluir tarefa com ID: {}", id);
 
-            // Validar o ID
-            if (id == null || id <= 0) {
-                logger.error("ID da tarefa inválido: {}", id);
-                return ResponseEntity.status(400).build();
-            }
-
-            // Obter o usuário autenticado do SecurityContextHolder
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null) {
-                logger.error("Contexto de autenticação é nulo.");
-                return ResponseEntity.status(401).build();
-            }
-            if (!authentication.isAuthenticated()) {
-                logger.error("Usuário não está autenticado.");
-                return ResponseEntity.status(401).build();
-            }
-            String username = authentication.getName();
-            if (username == null || username.trim().isEmpty()) {
-                logger.error("Nome do usuário autenticado é nulo ou vazio.");
-                return ResponseEntity.status(401).build();
-            }
-            logger.debug("Usuário autenticado: {}", username);
-
-            // Buscar o usuário no banco de dados
-            logger.debug("Buscando usuário com username: {}", username);
-            User user = userRepository.findByUsername(username).orElse(null);
-            if (user == null) {
-                logger.error("Usuário não encontrado no banco de dados: {}", username);
-                return ResponseEntity.status(404).build();
-            }
-            logger.debug("Usuário encontrado: ID = {}, Username = {}", user.getId(), user.getUsername());
-
-            // Forçar a sincronização com o banco de dados
-            logger.debug("Forçando sincronização com o banco de dados antes de buscar a tarefa.");
-            taskRepository.flush();
-
-            // Buscar a tarefa no banco de dados
-            logger.debug("Buscando tarefa com ID: {}", id);
-            Task task = taskRepository.findById(id).orElse(null);
-            if (task == null) {
-                logger.warn("Tarefa não encontrada com ID: {}", id);
-                return ResponseEntity.status(404).build();
-            }
-            logger.debug("Tarefa encontrada: ID = {}, Title = {}", task.getId(), task.getTitle());
-
-            // Forçar o carregamento do usuário associado à tarefa
-            Hibernate.initialize(task.getUser());
-            User taskUser = task.getUser();
-            if (taskUser == null) {
-                logger.error("Tarefa com ID {} não possui um usuário associado.", id);
-                return ResponseEntity.status(400).build();
-            }
-
-            logger.debug("Verificando propriedade da tarefa: user_id da tarefa = {}, id do usuário autenticado = {}", 
-                        taskUser.getId(), user.getId());
-            if (!taskUser.getId().equals(user.getId())) {
-                logger.error("Usuário {} (ID: {}) não tem permissão para deletar a tarefa {} (user_id: {})", username, user.getId(), id, taskUser.getId());
-                return ResponseEntity.status(403).build();
-            }
-
-            // Deletar a tarefa
-            logger.debug("Deletando tarefa com ID: {}", id);
-            taskRepository.delete(task);
-            taskRepository.flush();
-            logger.info("Tarefa deletada com sucesso: {}", id);
-            return ResponseEntity.noContent().build();
-        } catch (Exception e) {
-            logger.error("Erro ao deletar tarefa com ID {}: {}", id, e.getMessage(), e);
-            return ResponseEntity.status(500).build();
-        }
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+        taskService.deleteTask(id, username);
+        logger.info("Tarefa excluída com sucesso: {}", id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/bulk-update-status")

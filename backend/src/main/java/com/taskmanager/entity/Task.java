@@ -30,30 +30,31 @@ public class Task {
 
     private String description;
 
+    @Column(nullable = false)
     private String status;
-
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
 
     @Column(name = "due_date")
     private LocalDateTime dueDate;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 
     private boolean archived;
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
+    @JsonManagedReference
     private User user;
 
     @ManyToMany
     @JoinTable(
-        name = "task_tags",
-        joinColumns = @JoinColumn(name = "task_id"),
-        inverseJoinColumns = @JoinColumn(name = "tag_id")
+            name = "task_tags",
+            joinColumns = @JoinColumn(name = "task_id"),
+            inverseJoinColumns = @JoinColumn(name = "tag_id")
     )
-    @JsonManagedReference(value = "task-tags")
     private List<Tag> tags = new ArrayList<>();
 
-    // Getters e Setters
+    // Getters and setters
     public Long getId() {
         return id;
     }
@@ -86,20 +87,20 @@ public class Task {
         this.status = status;
     }
 
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
     public LocalDateTime getDueDate() {
         return dueDate;
     }
 
     public void setDueDate(LocalDateTime dueDate) {
         this.dueDate = dueDate;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
     }
 
     public boolean isArchived() {
